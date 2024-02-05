@@ -29,6 +29,13 @@ func newResult(rec *Recorder, cfg *ClientConfig, serr error, rerr error) *Result
 		Stats:       stats,
 	}
 
+	// Redact hostname, local_address and remote_address
+	r.SystemInfo.Hostname = "REDACTED"
+	r.Config.LocalAddress = "REDACTED"
+	r.Config.RemoteAddress = "REDACTED"
+	r.Config.Supplied.LocalAddress = "REDACTED"
+	r.Config.Supplied.RemoteAddress = "REDACTED"
+
 	// calculate total duration (monotonic time since start)
 	r.Duration = cfg.TimeSource.Now(Monotonic).Sub(r.Start)
 

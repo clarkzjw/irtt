@@ -1,0 +1,79 @@
+name: release
+
+on:
+  push:
+    tags:
+      - '*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ '1.24.x' ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Import GPG key
+        uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          # raw armor output of gpg --export-secret-keys --armor <keyid>
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+          # fingerprint of the signing subkey
+          fingerprint: 0700404AE9460E61342675BBB1C05962779C7662
+
+      - name: Install poetry
+        run: pipx install poetry && sudo apt-get update && sudo apt-get install reprepro gnupg2 -y
+
+      - name: Set up Python
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'poetry'
+
+      - name: Install Python3 dependencies
+        id: install-python-deps
+        run: poetry install
+
+      - name: Create Release
+        id: createRelease
+        uses: goreleaser/goreleaser-action@v6
+        if: success() && startsWith(github.ref, 'refs/tags/')
+        with:
+          version: latest
+          args: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTION_TOKEN }}
+
+      - name: Branch name
+        id: branch_name
+        run: |
+          echo "SOURCE_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
+          echo "SOURCE_BRANCH=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV
+          echo "SOURCE_TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Upload packages to Cloudflare R2
+        id: upload-r2-apt
+        run: bash release.sh
+        env:
+          CF_R2_BUCKET: ${{ secrets.CF_R2_BUCKET }}
+          CF_KEY_ID: ${{ secrets.CF_KEY_ID }}
+          CF_KEY_SECRET: ${{ secrets.CF_KEY_SECRET }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_RELEASE_TAG: ${{ env.SOURCE_TAG }}
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
